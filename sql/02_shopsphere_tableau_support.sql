@@ -431,3 +431,73 @@ ORDER BY
     customer_type,
     o.ab_variant;
 
+/*
+-- ============================================================
+-- A7. Customer Value by Acquisition Channel
+-- Мета:
+-- Розрахувати показники цінності клієнтів
+-- для кожного каналу залучення.
+--
+-- Використання:
+-- Question 4 та порівняння з Marketing ROI.
+--
+-- Рівень деталізації в CTE:
+-- 1 рядок = 1 клієнт.
+--
+-- Рівень деталізації фінального результату:
+-- 1 рядок = 1 канал залучення.
+--
+-- Важливо:
+-- average_customer_spend використовується як LTV proxy,
+-- а не як повний прогноз Lifetime Value.
+-- ============================================================
+
+WITH customer_metrics AS (
+    SELECT
+        c.customer_id,
+
+        -- Перейменовуємо скорочену назву поля
+        -- у зрозумілу бізнес-назву
+        c.acquisition_chan AS acquisition_channel,
+
+        -- Загальна сума чистої виручки від одного клієнта
+        SUM(o.net_amount) AS customer_spend,
+
+        -- Кількість унікальних замовлень одного клієнта
+        COUNT(DISTINCT o.order_id) AS customer_orders
+
+    FROM shopsphere_customers AS c
+
+    -- Додаємо інформацію про замовлення клієнтів
+    JOIN shopsphere_orders AS o
+        ON c.customer_id = o.customer_id
+
+    -- Спочатку агрегуємо дані до рівня клієнта
+    GROUP BY
+        c.customer_id,
+        c.acquisition_chan
+)
+
+SELECT
+    acquisition_channel,
+
+    -- Кількість активних клієнтів каналу
+    COUNT(*) AS total_customers,
+
+    -- Середня загальна сума витрат одного клієнта
+    -- Використовується як LTV proxy
+    ROUND(AVG(customer_spend), 2) AS average_customer_spend,
+
+    -- Загальна чиста виручка від клієнтів каналу
+    ROUND(SUM(customer_spend), 2) AS total_customer_revenue,
+
+    -- Середня кількість замовлень одного клієнта
+    ROUND(AVG(customer_orders), 2) AS average_orders_per_customer
+
+FROM customer_metrics
+
+-- Фінальне групування за каналом залучення
+GROUP BY acquisition_channel
+
+-- Канали з найбільшою середньою цінністю клієнта зверху
+ORDER BY average_customer_spend DESC;
