@@ -432,35 +432,47 @@ ORDER BY
     o.ab_variant;
 
 /*
--- ============================================================
--- A7. Customer Value by Acquisition Channel
--- Мета:
--- Розрахувати показники цінності клієнтів
--- для кожного каналу залучення.
---
--- Використання:
--- Question 4 та порівняння з Marketing ROI.
---
--- Рівень деталізації в CTE:
--- 1 рядок = 1 клієнт.
---
--- Рівень деталізації фінального результату:
--- 1 рядок = 1 канал залучення.
---
--- Важливо:
--- average_customer_spend використовується як LTV proxy,
--- а не як повний прогноз Lifetime Value.
--- ============================================================
+====================================================================
+A7. CUSTOMER VALUE BY ACQUISITION CHANNEL
+====================================================================
+
+Мета:
+Розрахувати цінність клієнтів для кожного каналу залучення
+та порівняти результат із Marketing ROI.
+
+Логіка:
+average_customer_spend використовується як LTV proxy —
+спрощена оцінка цінності клієнта за наявний період даних,
+а не як повний прогноз Lifetime Value.
+
+Рівень деталізації:
+- у CTE customer_metrics: 1 рядок = 1 клієнт;
+- у фінальному результаті: 1 рядок = 1 acquisition channel.
+
+Алгоритм:
+1. JOIN додає замовлення до кожного клієнта.
+2. У CTE для кожного клієнта рахуємо total spend
+   та кількість унікальних замовлень.
+3. У фінальному SELECT групуємо клієнтів
+   за acquisition_channel.
+4. Для кожного каналу рахуємо:
+   customers, average customer spend,
+   total customer revenue та average orders per customer.
+
+Tableau/report:
+Question 4. Результат потрібно порівняти з Marketing ROI,
+щоб оцінити канали не лише за ефективністю кампаній,
+а й за довгостроковою цінністю залучених клієнтів.
+*/
 
 WITH customer_metrics AS (
     SELECT
         c.customer_id,
 
         -- Перейменовуємо скорочену назву поля
-        -- у зрозумілу бізнес-назву
         c.acquisition_chan AS acquisition_channel,
 
-        -- Загальна сума чистої виручки від одного клієнта
+        -- Загальна чиста виручка від одного клієнта
         SUM(o.net_amount) AS customer_spend,
 
         -- Кількість унікальних замовлень одного клієнта
@@ -468,17 +480,36 @@ WITH customer_metrics AS (
 
     FROM shopsphere_customers AS c
 
-    -- Додаємо інформацію про замовлення клієнтів
+    -- Додаємо замовлення клієнтів
     JOIN shopsphere_orders AS o
         ON c.customer_id = o.customer_id
 
-    -- Спочатку агрегуємо дані до рівня клієнта
+    -- Агрегуємо дані до рівня одного клієнта
     GROUP BY
         c.customer_id,
         c.acquisition_chan
 )
 
 SELECT
+    acquisition_channel,
+
+    -- Кількість активних клієнтів каналу
+    COUNT(*) AS total_customers,
+
+    -- Середня сума витрат одного клієнта
+    ROUND(AVG(customer_spend), 2) AS average_customer_spend,
+
+    -- Загальна чиста виручка клієнтів каналу
+    ROUND(SUM(customer_spend), 2) AS total_customer_revenue,
+
+    -- Середня кількість замовлень на одного клієнта
+    ROUND(AVG(customer_orders), 2) AS average_orders_per_customer
+
+FROM customer_metrics
+
+GROUP BY acquisition_channel
+
+ORDER BY average_customer_spend DESC;
     acquisition_channel,
 
     -- Кількість активних клієнтів каналу
