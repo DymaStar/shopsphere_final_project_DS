@@ -284,6 +284,9 @@ WHERE customer_totals.total_spend > (
 TASK 1.5
 Budget, Attributed Revenue and Marketing ROI by Channel
 ====================================================================
+У завданні показник названо ROI.
+Однак формула attributed_revenue / budget
+за стандартною маркетинговою термінологією відповідає ROAS.
 
 Мета:
 Порівняти маркетингові канали за бюджетом, приписаною виручкою
