@@ -532,3 +532,50 @@ GROUP BY acquisition_channel
 
 -- Канали з найбільшою середньою цінністю клієнта зверху
 ORDER BY average_customer_spend DESC;
+
+/*
+====================================================================
+A8. INTERACTIVE CATEGORY DATASET FOR TABLEAU
+====================================================================
+
+Мета:
+Підготувати деталізоване джерело для Category Performance,
+щоб у Tableau працювали фільтри за роком, місяцем, регіоном,
+каналом і пристроєм.
+
+Рівень деталізації:
+один рядок = одна товарна позиція замовлення.
+*/
+
+SELECT
+    oi.item_id,
+    oi.order_id,
+    o.customer_id,
+    o.order_date,
+    o.order_year,
+    o.order_month,
+
+    c.region,
+
+    o.device,
+    o.channel AS sales_channel,
+
+    p.category,
+    oi.line_total,
+    p.margin_pct,
+    o.is_returned
+
+FROM shopsphere_order_items AS oi
+
+JOIN shopsphere_products AS p
+    ON oi.product_id = p.product_id
+
+JOIN shopsphere_orders AS o
+    ON oi.order_id = o.order_id
+
+JOIN shopsphere_customers AS c
+    ON o.customer_id = c.customer_id
+
+ORDER BY
+    o.order_date,
+    oi.item_id;
