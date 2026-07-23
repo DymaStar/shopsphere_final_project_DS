@@ -14,6 +14,14 @@ SQL-діалект: SQLite.
 5. COUNT(DISTINCT ...) захищає кількість замовлень від дублювання
    після JOIN.
 
+ВИПРАВЛЕННЯ (аудит, 07.2026):
+- Task 1.4 переписано через WITH/CTE замість подвійного дублювання
+  одного й того самого підзапиту (SELECT customer_id, SUM(net_amount)
+  ... GROUP BY customer_id) у SELECT та у WHERE. Результат
+  ідентичний оригіналу — перевірено на реальних даних, усі 4
+  показники збігаються до копійки. Зміна суто про читабельність
+  коду й відсутність дублювання логіки, не про правильність.
+
 Особливості імпортованих таблиць SQLiteOnline:
 - вихідне поле acquisition_channel збережене як acquisition_chan;
 - вихідне поле attributed_revenue збережене як attributed_reven.
@@ -211,14 +219,23 @@ Customers Whose Total Spend Exceeds the Customer Average
 Знайти клієнтів, які витратили більше за середню загальну суму
 витрат одного клієнта, порахувати їх кількість і частку виручки.
 
-Чому використовується підзапит:
+Чому використовується CTE:
 Спочатку потрібно отримати total_spend кожного клієнта, а вже потім
 порахувати середнє між клієнтами. AVG(net_amount) напряму рахував би
 середнє замовлення, а не середні витрати клієнта.
 
+ВИПРАВЛЕННЯ (аудит):
+У попередній версії один і той самий підзапит (агрегація
+customer_id → total_spend) дублювався двічі: один раз у SELECT для
+average_customer_spend, другий раз у WHERE для порогу. Результат
+був правильний, але це зайве дублювання коду й зайве повторне
+сканування таблиці. Винесено обидва обчислення в спільні CTE
+customer_totals і average_spend, порахований один раз.
+
 Алгоритм:
-1. Внутрішній підзапит customer_totals групує orders за customer_id.
-2. Другий підзапит рахує AVG(customer_spend) по всіх клієнтах.
+1. CTE customer_totals групує orders за customer_id → total_spend.
+2. CTE average_spend рахує AVG(total_spend) один раз для всіх
+   клієнтів.
 3. WHERE залишає клієнтів із total_spend вище цього середнього.
 4. Зовнішній SELECT рахує кількість таких клієнтів і їхню виручку.
 5. Частка виручки = їхня виручка / вся net revenue × 100.
@@ -227,24 +244,28 @@ Customers Whose Total Spend Exceeds the Customer Average
 один підсумковий рядок.
 */
 
+WITH customer_totals AS (
+    -- Крок 1: загальні витрати кожного клієнта
+    SELECT
+        customer_id,
+        SUM(net_amount) AS total_spend
+    FROM shopsphere_orders
+    GROUP BY customer_id
+),
+
+average_spend AS (
+    -- Крок 2: середня загальна сума витрат одного клієнта
+    SELECT AVG(total_spend) AS average_customer_spend
+    FROM customer_totals
+)
+
 SELECT
     -- Кількість клієнтів вище середнього
     COUNT(*) AS above_average_customers,
 
     -- Середня загальна сума витрат одного клієнта
-    ROUND(
-        (
-            SELECT AVG(customer_spend)
-            FROM (
-                SELECT
-                    customer_id,
-                    SUM(net_amount) AS customer_spend
-                FROM shopsphere_orders
-                GROUP BY customer_id
-            ) AS all_customer_spend
-        ),
-        2
-    ) AS average_customer_spend,
+    ROUND((SELECT average_customer_spend FROM average_spend), 2)
+        AS average_customer_spend,
 
     -- Виручка від клієнтів вище середнього
     ROUND(SUM(customer_totals.total_spend), 2)
@@ -257,26 +278,9 @@ SELECT
         2
     ) AS revenue_share_pct
 
-FROM (
-    -- Рахуємо загальні витрати кожного клієнта
-    SELECT
-        customer_id,
-        SUM(net_amount) AS total_spend
-    FROM shopsphere_orders
-    GROUP BY customer_id
-) AS customer_totals
+FROM customer_totals, average_spend
 
-WHERE customer_totals.total_spend > (
-    -- Поріг: середня загальна сума витрат одного клієнта
-    SELECT AVG(customer_spend)
-    FROM (
-        SELECT
-            customer_id,
-            SUM(net_amount) AS customer_spend
-        FROM shopsphere_orders
-        GROUP BY customer_id
-    ) AS all_customer_spend
-);
+WHERE customer_totals.total_spend > average_spend.average_customer_spend;
 
 
 /*
@@ -335,4 +339,3 @@ GROUP BY
 
 ORDER BY
     marketing_roi DESC;
-
